@@ -14,7 +14,11 @@ require('dotenv').config({ path: '.env.local' });
 
 const WALLET_AUTH_DIR = 'auth_info_baileys';
 const SERVICE_ACCOUNT_FILE = './eduhubsl0-firebase-adminsdk-fbsvc-55642e63cb.json';
-const TARGET_EMAIL = 'tikfese@gmail.com'; 
+
+// Use the email from environment variables, or fallback to your default
+const TARGET_EMAIL = process.env.TARGET_BUSINESS_EMAIL || 'tikfese@gmail.com'; 
+
+console.log(`🎯 TARGETING BUSINESS: ${TARGET_EMAIL}`);
 
 console.log("-----------------------------------------");
 console.log("🚀 E BOT 2.0 BOOT SEQUENCE STARTING...");
@@ -148,9 +152,16 @@ async function startBot() {
       await bizRef.update({ whatsapp_status: 'connected', whatsapp_qr: null });
     }
     if (connection === 'close') {
-      const code = (lastDisconnect.error instanceof Boom)?.output?.statusCode;
-      console.log(`🔌 Connection closed (Code: ${code}). Reconnecting...`);
-      if (code === 401 || code === 400) {
+      const code = (lastDisconnect?.error instanceof Boom)?.output?.statusCode;
+      const reason = lastDisconnect?.error?.message || 'Unknown reason';
+      console.log(`🔌 Connection closed (Code: ${code}, Reason: ${reason}). Reconnecting...`);
+      
+      if (lastDisconnect?.error) {
+         console.log("🛠️  DEBUG ERROR:", lastDisconnect.error);
+      }
+
+      if (code === 401 || code === 400 || code === 440) {
+        console.log("🧹 Session expired or conflict. Clearing auth folder...");
         if (fs.existsSync(WALLET_AUTH_DIR)) fs.rmSync(WALLET_AUTH_DIR, { recursive: true, force: true });
       }
       setTimeout(startBot, 5000);
@@ -182,5 +193,6 @@ async function startBot() {
 }
 
 startBot();
+
 
 
