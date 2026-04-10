@@ -17,7 +17,29 @@ const SERVICE_ACCOUNT_FILE = './eduhubsl0-firebase-adminsdk-fbsvc-55642e63cb.jso
 const TARGET_EMAIL = 'tikfese@gmail.com'; 
 
 if (!admin.apps.length) {
-  admin.initializeApp({ credential: admin.credential.cert(require(SERVICE_ACCOUNT_FILE)) });
+  let serviceAccount;
+  const envKey = process.env.FIREBASE_SERVICE_ACCOUNT;
+
+  if (envKey) {
+    console.log("☁️  SYSTEM: Attempting to load credentials from Environment Variable...");
+    try {
+      serviceAccount = JSON.parse(envKey);
+    } catch (e) {
+      console.error("❌ ERROR: Your FIREBASE_SERVICE_ACCOUNT variable is not valid JSON!");
+      process.exit(1);
+    }
+  } else if (fs.existsSync(SERVICE_ACCOUNT_FILE)) {
+    console.log("📁 SYSTEM: Loading credentials from local JSON file...");
+    serviceAccount = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_FILE, 'utf8'));
+  }
+
+  if (serviceAccount) {
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    console.log("✅ SYSTEM: Firebase Admin initialized successfully.");
+  } else {
+    console.error("❌ CRITICAL ERROR: No Firebase credentials found. Please set FIREBASE_SERVICE_ACCOUNT in Railway.");
+    process.exit(1);
+  }
 }
 const db = admin.firestore();
 
@@ -26,7 +48,7 @@ let isReconnecting = false;
 
 // --- MESSAGE DEBOUNCING QUEUE ---
 const messageQueues = {}; 
-const DEBOUNCE_WAIT = 3000; // Wait 3 seconds for more messages
+const DEBOUNCE_WAIT = 3000; 
 
 async function processQueuedMessages(jid, pushName) {
     const queue = messageQueues[jid];
@@ -81,7 +103,6 @@ async function processQueuedMessages(jid, pushName) {
       } catch (err) { }
     }
     
-    // Clear queue after processing
     delete messageQueues[jid];
 }
 
@@ -102,7 +123,7 @@ async function startBot() {
   sock.ev.on('creds.update', saveCreds);
 
   const snapshot = await db.collection('businesses').where('email', '==', TARGET_EMAIL).limit(1).get();
-  if (snapshot.empty) return console.error("❌ Business not found.");
+  if (snapshot.empty) return console.error("❌ Business not found in database.");
   const bizRef = snapshot.docs[0].ref;
 
   sock.ev.on('connection.update', async (update) => {
@@ -132,15 +153,12 @@ async function startBot() {
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
     if (!text) return;
 
-    // --- DEBOUNCING LOGIC ---
     if (!messageQueues[jid]) {
         messageQueues[jid] = { messages: [], timer: null };
     }
 
-    // Add message to queue
     messageQueues[jid].messages.push(text);
 
-    // Reset/Start Timer
     if (messageQueues[jid].timer) {
         clearTimeout(messageQueues[jid].timer);
     }
