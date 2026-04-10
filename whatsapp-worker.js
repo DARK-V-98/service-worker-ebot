@@ -59,11 +59,14 @@ let isReconnecting = false;
 
 // --- MESSAGE DEBOUNCING QUEUE ---
 const messageQueues = {}; 
-const DEBOUNCE_WAIT = 3000; 
+const DEBOUNCE_WAIT = 1200; // Turbo Speed: Group messages faster
 
 async function processQueuedMessages(jid, pushName) {
     const queue = messageQueues[jid];
     if (!queue || queue.messages.length === 0) return;
+
+    // Show "Aarya is typing..." to the customer immediately
+    await sock.sendPresenceUpdate('composing', jid);
 
     const fullText = queue.messages.join(' ').trim();
     const phone = jid.split('@')[0];
@@ -87,7 +90,10 @@ async function processQueuedMessages(jid, pushName) {
       if (replied) break;
       try {
         console.log(`📡 Sending to: ${url}/api/simulator`);
-        const response = await axios.post(`${url}/api/simulator`, payload, { headers, timeout: 60000 });
+        const response = await axios.post(`${url}/api/simulator`, payload, { 
+          headers, 
+          timeout: 45000 
+        });
         const { reply, products } = response.data;
 
         if (reply) {
@@ -113,9 +119,14 @@ async function processQueuedMessages(jid, pushName) {
           replied = true;
         }
       } catch (err) { 
-        console.error(`⚠️  URL Failed: ${url}`);
+        const status = err.response?.status || 'Network Error';
+        const msg = err.response?.data?.error || err.message;
+        console.error(`⚠️  URL Failed: ${url} | Status: ${status} | Error: ${msg}`);
       }
     }
+
+    // Stop typing status after sending
+    await sock.sendPresenceUpdate('paused', jid);
     
     delete messageQueues[jid];
 }
