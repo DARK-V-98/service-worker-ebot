@@ -151,12 +151,26 @@ async function processQueuedMessages(jid, pushName) {
       try {
         console.log(`📡 Sending to: ${url}/api/simulator`);
         const response = await axios.post(`${url}/api/simulator`, payload, { headers, timeout: 60000 });
-        const { reply, products } = response.data;
+        const { reply, products, replyButtons, interactiveType } = response.data;
 
         if (reply) {
           console.log(`🤖 AI Reply: ${reply.substring(0, 50)}...`);
           
-          if (products && products.length > 0) {
+          if (interactiveType === 'image' && products && products.length > 0 && products[0].image_url) {
+            console.log('🖼️  Sending Image Message via Baileys...');
+            await sock.sendMessage(jid, {
+              image: { url: products[0].image_url },
+              caption: reply
+            });
+            // Send buttons as a quick follow-up if applicable
+            if (replyButtons && replyButtons.length > 0) {
+              try {
+                const buttons = replyButtons.map(b => ({ buttonId: String(b.id), buttonText: { displayText: b.title }, type: 1 }));
+                await sock.sendMessage(jid, { text: "What would you like to do next?", buttons: buttons, headerType: 1 });
+              } catch(e) { } 
+            }
+          }
+          else if (interactiveType === 'list' || (!interactiveType && products && products.length > 0)) {
             const rows = products.slice(0, 10).map(p => ({
               title: p.name.substring(0, 24),
               rowId: `prod_${p.id}`,
@@ -170,7 +184,16 @@ async function processQueuedMessages(jid, pushName) {
               buttonText: 'View Catalog',
               sections: [{ title: 'Store Collection', rows }]
             });
-          } else {
+          }
+          else if (interactiveType === 'reply_buttons' && replyButtons && replyButtons.length > 0) {
+            try {
+              const buttons = replyButtons.map(b => ({ buttonId: String(b.id), buttonText: { displayText: b.title }, type: 1 }));
+              await sock.sendMessage(jid, { text: reply, buttons: buttons, headerType: 1 });
+            } catch(e) {
+              await sock.sendMessage(jid, { text: reply });
+            }
+          }
+          else {
             await sock.sendMessage(jid, { text: reply });
           }
           replied = true;
@@ -325,3 +348,4 @@ async function startBot() {
 }
 
 startBot();
+
