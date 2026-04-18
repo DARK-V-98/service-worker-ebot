@@ -141,8 +141,8 @@ async function processQueuedMessages(jid, pushName) {
     const headers = { 'Authorization': 'Bearer dev-token' };
 
     const urls = [
-      process.env.NEXT_PUBLIC_SITE_URL,
-      'http://127.0.0.1:3000'
+      'http://127.0.0.1:3000',
+      process.env.NEXT_PUBLIC_SITE_URL
     ].filter(Boolean);
 
     let replied = false;
@@ -348,4 +348,3 @@ async function startBot() {
 }
 
 startBot();
-
