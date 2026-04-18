@@ -2,7 +2,8 @@ const {
   default: makeWASocket, 
   useMultiFileAuthState, 
   DisconnectReason,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  downloadMediaMessage
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const axios = require('axios');
@@ -14,14 +15,13 @@ require('dotenv').config({ path: '.env.local' });
 
 const WALLET_AUTH_DIR = 'auth_info_baileys';
 const SERVICE_ACCOUNT_FILE = './eduhubsl0-firebase-adminsdk-fbsvc-55642e63cb.json';
-
-// Use the email from environment variables, or fallback to your default
-const TARGET_EMAIL = process.env.TARGET_BUSINESS_EMAIL || 'tikfese@gmail.com'; 
-
-console.log(`🎯 TARGETING BUSINESS: ${TARGET_EMAIL}`);
+const TARGET_EMAIL = 'tikfese@gmail.com'; 
 
 console.log("-----------------------------------------");
 console.log("🚀 E BOT 2.0 BOOT SEQUENCE STARTING...");
+console.log("   📸 Media Handler: ACTIVE");
+console.log("   📋 Interactive Buttons: ACTIVE");
+console.log("   🔔 Push Notifications: ACTIVE");
 console.log("-----------------------------------------");
 
 if (!admin.apps.length) {
@@ -59,14 +59,74 @@ let isReconnecting = false;
 
 // --- MESSAGE DEBOUNCING QUEUE ---
 const messageQueues = {}; 
-const DEBOUNCE_WAIT = 1200; // Turbo Speed: Group messages faster
+const DEBOUNCE_WAIT = 3000; 
+
+/**
+ * Extract media type info from a Baileys message
+ */
+function getMediaType(msg) {
+  const m = msg.message;
+  if (!m) return null;
+
+  if (m.imageMessage)    return { type: 'image',    key: 'imageMessage',    mimetype: m.imageMessage.mimetype,    caption: m.imageMessage.caption };
+  if (m.audioMessage)    return { type: 'audio',    key: 'audioMessage',    mimetype: m.audioMessage.mimetype,    duration: m.audioMessage.seconds };
+  if (m.videoMessage)    return { type: 'video',    key: 'videoMessage',    mimetype: m.videoMessage.mimetype,    caption: m.videoMessage.caption, duration: m.videoMessage.seconds };
+  if (m.documentMessage) return { type: 'document', key: 'documentMessage', mimetype: m.documentMessage.mimetype, filename: m.documentMessage.fileName };
+  if (m.stickerMessage)  return { type: 'sticker',  key: 'stickerMessage',  mimetype: m.stickerMessage.mimetype };
+  if (m.locationMessage) return { type: 'location', latitude: m.locationMessage.degreesLatitude, longitude: m.locationMessage.degreesLongitude };
+
+  return null;
+}
+
+/**
+ * Extract text from various message types including button responses
+ */
+function extractTextFromMessage(msg) {
+  const m = msg.message;
+  if (!m) return null;
+
+  // Regular text messages
+  if (m.conversation) return m.conversation;
+  if (m.extendedTextMessage?.text) return m.extendedTextMessage.text;
+  
+  // Interactive button responses
+  if (m.buttonsResponseMessage?.selectedButtonId) return m.buttonsResponseMessage.selectedButtonId;
+  if (m.listResponseMessage?.singleSelectReply?.selectedRowId) return m.listResponseMessage.singleSelectReply.selectedRowId;
+  if (m.templateButtonReplyMessage?.selectedId) return m.templateButtonReplyMessage.selectedId;
+  
+  // Interactive message responses (reply buttons from Meta)
+  if (m.interactiveResponseMessage) {
+    try {
+      const body = m.interactiveResponseMessage.nativeFlowResponseMessage?.paramsJson;
+      if (body) {
+        const parsed = JSON.parse(body);
+        return parsed.id || parsed.flow_token || null;
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
+
+/**
+ * Download and convert media to base64
+ */
+async function downloadMediaAsBase64(msg, mediaInfo) {
+  try {
+    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+    const base64 = buffer.toString('base64');
+    const dataUrl = `data:${mediaInfo.mimetype || 'application/octet-stream'};base64,${base64}`;
+    console.log(`📥 Media downloaded: ${mediaInfo.type} (${(buffer.length / 1024).toFixed(1)} KB)`);
+    return dataUrl;
+  } catch (err) {
+    console.error(`⚠️  Media download failed:`, err.message);
+    return null;
+  }
+}
 
 async function processQueuedMessages(jid, pushName) {
     const queue = messageQueues[jid];
     if (!queue || queue.messages.length === 0) return;
-
-    // Show "Aarya is typing..." to the customer immediately
-    await sock.sendPresenceUpdate('composing', jid);
 
     const fullText = queue.messages.join(' ').trim();
     const phone = jid.split('@')[0];
@@ -90,10 +150,7 @@ async function processQueuedMessages(jid, pushName) {
       if (replied) break;
       try {
         console.log(`📡 Sending to: ${url}/api/simulator`);
-        const response = await axios.post(`${url}/api/simulator`, payload, { 
-          headers, 
-          timeout: 45000 
-        });
+        const response = await axios.post(`${url}/api/simulator`, payload, { headers, timeout: 60000 });
         const { reply, products } = response.data;
 
         if (reply) {
@@ -119,16 +176,77 @@ async function processQueuedMessages(jid, pushName) {
           replied = true;
         }
       } catch (err) { 
-        const status = err.response?.status || 'Network Error';
-        const msg = err.response?.data?.error || err.message;
-        console.error(`⚠️  URL Failed: ${url} | Status: ${status} | Error: ${msg}`);
+        console.error(`⚠️  URL Failed: ${url}`);
+      }
+    }
+    
+    delete messageQueues[jid];
+}
+
+/**
+ * Process media messages (images, audio, video, documents, stickers, locations)
+ */
+async function processMediaMessage(jid, pushName, msg, mediaInfo) {
+    const phone = jid.split('@')[0];
+    console.log(`\n📸 Media received from ${phone}: ${mediaInfo.type}`);
+
+    // Download media and convert to base64 (for images/stickers only, to save memory)
+    let base64 = null;
+    if (['image', 'sticker'].includes(mediaInfo.type)) {
+      base64 = await downloadMediaAsBase64(msg, mediaInfo);
+    }
+
+    const payload = {
+      phone: phone,
+      name: pushName || 'Customer',
+      media: {
+        type: mediaInfo.type,
+        mimetype: mediaInfo.mimetype || null,
+        caption: mediaInfo.caption || null,
+        filename: mediaInfo.filename || null,
+        base64: base64,
+        latitude: mediaInfo.latitude || null,
+        longitude: mediaInfo.longitude || null,
+        duration: mediaInfo.duration || null,
+      }
+    };
+    const headers = { 'Authorization': 'Bearer dev-token' };
+
+    const urls = [
+      process.env.NEXT_PUBLIC_SITE_URL,
+      'http://127.0.0.1:3000'
+    ].filter(Boolean);
+
+    let replied = false;
+    for (const url of urls) {
+      if (replied) break;
+      try {
+        console.log(`📡 Sending media to: ${url}/api/simulator/media`);
+        const response = await axios.post(`${url}/api/simulator/media`, payload, { headers, timeout: 90000 });
+        const { reply } = response.data;
+
+        if (reply) {
+          console.log(`🤖 AI Media Reply: ${reply.substring(0, 50)}...`);
+          await sock.sendMessage(jid, { text: reply });
+          replied = true;
+        }
+      } catch (err) {
+        console.error(`⚠️  Media URL Failed: ${url}`, err.message);
       }
     }
 
-    // Stop typing status after sending
-    await sock.sendPresenceUpdate('paused', jid);
-    
-    delete messageQueues[jid];
+    // Fallback if all URLs fail
+    if (!replied) {
+      const fallbacks = {
+        image: "📷 I received your image! Let me know what you'd like help with.",
+        audio: "🎤 I received your voice message! Could you please type your request? I can respond faster to text.",
+        video: "🎬 Thanks for the video! How can I help you today?",
+        document: "📄 I received your document. What would you like me to do with it?",
+        sticker: "😄 Nice sticker! How can I help you today?",
+        location: "📍 Thanks for sharing your location! Is this for a delivery?"
+      };
+      await sock.sendMessage(jid, { text: fallbacks[mediaInfo.type] || "I received your media. How can I help?" });
+    }
 }
 
 async function startBot() {
@@ -163,16 +281,9 @@ async function startBot() {
       await bizRef.update({ whatsapp_status: 'connected', whatsapp_qr: null });
     }
     if (connection === 'close') {
-      const code = (lastDisconnect?.error instanceof Boom)?.output?.statusCode;
-      const reason = lastDisconnect?.error?.message || 'Unknown reason';
-      console.log(`🔌 Connection closed (Code: ${code}, Reason: ${reason}). Reconnecting...`);
-      
-      if (lastDisconnect?.error) {
-         console.log("🛠️  DEBUG ERROR:", lastDisconnect.error);
-      }
-
-      if (code === 401 || code === 400 || code === 440) {
-        console.log("🧹 Session expired or conflict. Clearing auth folder...");
+      const code = (lastDisconnect.error instanceof Boom)?.output?.statusCode;
+      console.log(`🔌 Connection closed (Code: ${code}). Reconnecting...`);
+      if (code === 401 || code === 400) {
         if (fs.existsSync(WALLET_AUTH_DIR)) fs.rmSync(WALLET_AUTH_DIR, { recursive: true, force: true });
       }
       setTimeout(startBot, 5000);
@@ -184,7 +295,17 @@ async function startBot() {
     if (!msg.message || msg.key.fromMe) return;
 
     const jid = msg.key.remoteJid;
-    const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+    
+    // --- CHECK FOR MEDIA MESSAGES FIRST ---
+    const mediaInfo = getMediaType(msg);
+    if (mediaInfo) {
+      // Process media immediately (no debouncing for media)
+      await processMediaMessage(jid, msg.pushName, msg, mediaInfo);
+      return;
+    }
+
+    // --- TEXT / BUTTON RESPONSE MESSAGES ---
+    const text = extractTextFromMessage(msg);
     if (!text) return;
 
     if (!messageQueues[jid]) {
@@ -204,6 +325,3 @@ async function startBot() {
 }
 
 startBot();
-
-
-
