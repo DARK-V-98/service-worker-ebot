@@ -168,8 +168,8 @@ async function processQueuedMessages(jid, pushName) {
     for (const url of urls) {
       if (replied) break;
       try {
-        console.log(`📡 Sending to: ${url}/api/simulator`);
-        const response = await axios.post(`${url}/api/simulator`, payload, { headers, timeout: 60000 });
+        console.log(`📡 Sending to: ${url}/api/chat`);
+        const response = await axios.post(`${url}/api/chat`, payload, { headers, timeout: 60000 });
         const { reply, products, replyButtons, interactiveType, welcomeReply } = response.data;
 
         if (welcomeReply) {
@@ -233,7 +233,7 @@ async function processQueuedMessages(jid, pushName) {
           replied = true;
         }
       } catch (err) { 
-        console.error(`⚠️  URL Failed: ${url}/api/simulator | Error: ${err.response?.status || err.message}`);
+        console.error(`⚠️  URL Failed: ${url}/api/chat | Error: ${err.response?.status || err.message}`);
         if (err.response?.data) console.error(`   Details:`, JSON.stringify(err.response.data).substring(0, 100));
       }
     }
@@ -278,8 +278,8 @@ async function processMediaMessage(jid, pushName, msg, mediaInfo) {
     for (const url of urls) {
       if (replied) break;
       try {
-        console.log(`📡 Sending media to: ${url}/api/simulator/media`);
-        const response = await axios.post(`${url}/api/simulator/media`, payload, { headers, timeout: 90000 });
+        console.log(`📡 Sending media to: ${url}/api/chat/media`);
+        const response = await axios.post(`${url}/api/chat/media`, payload, { headers, timeout: 90000 });
         const { reply } = response.data;
 
         if (reply) {
@@ -288,7 +288,7 @@ async function processMediaMessage(jid, pushName, msg, mediaInfo) {
           replied = true;
         }
       } catch (err) {
-        console.error(`⚠️  Media URL Failed: ${url}/api/simulator/media | Error: ${err.response?.status || err.message}`);
+        console.error(`⚠️  Media URL Failed: ${url}/api/chat/media | Error: ${err.response?.status || err.message}`);
         if (err.response?.data) console.error(`   Details:`, JSON.stringify(err.response.data).substring(0, 100));
       }
     }
