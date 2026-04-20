@@ -161,7 +161,6 @@ async function processQueuedMessages(jid, pushName) {
     const headers = { 'Authorization': 'Bearer dev-token' };
 
     const urls = [
-      'http://127.0.0.1:3000',
       process.env.NEXT_PUBLIC_SITE_URL
     ].filter(Boolean);
 
@@ -271,8 +270,7 @@ async function processMediaMessage(jid, pushName, msg, mediaInfo) {
     const headers = { 'Authorization': 'Bearer dev-token' };
 
     const urls = [
-      process.env.NEXT_PUBLIC_SITE_URL,
-      'http://127.0.0.1:3000'
+      process.env.NEXT_PUBLIC_SITE_URL
     ].filter(Boolean);
 
     let replied = false;
@@ -353,6 +351,7 @@ async function startBot() {
     if (!msg.message || msg.key.fromMe) return;
 
     const jid = msg.key.remoteJid;
+    if (jid === 'status@broadcast') return; // Ignore status updates
     
     // --- CHECK FOR MEDIA MESSAGES FIRST ---
     const mediaInfo = getMediaType(msg);
