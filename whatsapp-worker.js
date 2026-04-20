@@ -13,42 +13,44 @@ const admin = require('firebase-admin');
 const fs = require('fs');
 require('dotenv').config({ path: '.env.local' });
 
-const WALLET_AUTH_DIR = 'auth_info_baileys';
-const SERVICE_ACCOUNT_FILE = './eduhubsl0-firebase-adminsdk-fbsvc-55642e63cb.json';
-const TARGET_EMAIL = 'tikfese@gmail.com'; 
-
 console.log("-----------------------------------------");
 console.log("🚀 E BOT 2.0 BOOT SEQUENCE STARTING...");
 console.log("   📸 Media Handler: ACTIVE");
 console.log("   📋 Interactive Buttons: ACTIVE");
-console.log("   🔔 Push Notifications: ACTIVE");
+console.log("   🔔 Status: ORCHESTRATED BY E BOT 2.0");
 console.log("-----------------------------------------");
 
+const WALLET_AUTH_DIR = 'auth_info_baileys';
+const TARGET_EMAIL = 'aarya2026@gmail.com'; 
+
 if (!admin.apps.length) {
-  let serviceAccount;
+  let cert;
   const envKey = process.env.FIREBASE_SERVICE_ACCOUNT;
 
   if (envKey && envKey.length > 10) {
     console.log("☁️  DETECTED: FIREBASE_SERVICE_ACCOUNT variable found!");
     try {
-      serviceAccount = JSON.parse(envKey);
-      console.log("✅ SUCCESS: Environment Variable parsed as valid JSON.");
+      cert = admin.credential.cert(JSON.parse(envKey));
     } catch (e) {
-      console.error("❌ ERROR: Your FIREBASE_SERVICE_ACCOUNT variable in Railway is NOT valid JSON.");
-      console.error("Make sure it starts with { and ends with } and has no extra text.");
+      console.error("❌ ERROR: Your FIREBASE_SERVICE_ACCOUNT variable is NOT valid JSON.");
       process.exit(1);
     }
-  } else if (fs.existsSync(SERVICE_ACCOUNT_FILE)) {
-    console.log("📁 DETECTED: Local JSON file found.");
-    serviceAccount = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_FILE, 'utf8'));
+  } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    console.log("🧩 DETECTED: Individual Firebase variables found.");
+    const pk = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+    cert = admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: pk
+    });
   }
 
-  if (serviceAccount) {
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+  if (cert) {
+    admin.initializeApp({ credential: cert });
     console.log("✅ SUCCESS: Firebase Admin Initialized.");
   } else {
     console.error("❌ CRITICAL ERROR: NO CREDENTIALS FOUND!");
-    console.error("Checked for Environment Variable 'FIREBASE_SERVICE_ACCOUNT' and File '" + SERVICE_ACCOUNT_FILE + "'. Both are missing.");
+    console.error("Please add FIREBASE_PRIVATE_KEY and FIREBASE_CLIENT_EMAIL to .env.local");
     process.exit(1);
   }
 }
@@ -376,3 +378,4 @@ async function startBot() {
 }
 
 startBot();
+
