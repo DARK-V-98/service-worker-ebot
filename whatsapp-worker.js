@@ -37,7 +37,12 @@ if (!admin.apps.length) {
     }
   } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
     console.log("🧩 DETECTED: Individual Firebase variables found.");
-    const pk = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+    
+    // Advanced Key Sanitizer to fix DECODER UNKNOWN errors
+    let pk = process.env.FIREBASE_PRIVATE_KEY.trim();
+    if (pk.startsWith('"') && pk.endsWith('"')) pk = pk.slice(1, -1); // Remove wrapper quotes
+    pk = pk.replace(/\\n/g, '\n'); // Convert literal \n to real newlines
+    
     cert = admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
@@ -378,4 +383,3 @@ async function startBot() {
 }
 
 startBot();
-
