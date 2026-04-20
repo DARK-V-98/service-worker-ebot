@@ -233,7 +233,8 @@ async function processQueuedMessages(jid, pushName) {
           replied = true;
         }
       } catch (err) { 
-        console.error(`⚠️  URL Failed: ${url}`);
+        console.error(`⚠️  URL Failed: ${url}/api/simulator | Error: ${err.response?.status || err.message}`);
+        if (err.response?.data) console.error(`   Details:`, JSON.stringify(err.response.data).substring(0, 100));
       }
     }
     
@@ -287,7 +288,8 @@ async function processMediaMessage(jid, pushName, msg, mediaInfo) {
           replied = true;
         }
       } catch (err) {
-        console.error(`⚠️  Media URL Failed: ${url}`, err.message);
+        console.error(`⚠️  Media URL Failed: ${url}/api/simulator/media | Error: ${err.response?.status || err.message}`);
+        if (err.response?.data) console.error(`   Details:`, JSON.stringify(err.response.data).substring(0, 100));
       }
     }
 
@@ -321,9 +323,16 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  const snapshot = await db.collection('businesses').where('email', '==', TARGET_EMAIL).limit(1).get();
-  if (snapshot.empty) return console.error("❌ Business record missing in database.");
-  const bizRef = snapshot.docs[0].ref;
+  let bizRef = null;
+  try {
+    const snapshot = await db.collection('businesses').where('email', '==', TARGET_EMAIL).limit(1).get();
+    if (!snapshot.empty) bizRef = snapshot.docs[0].ref;
+    else console.error("❌ Business record missing in database.");
+  } catch (err) {
+    console.error("⚠️  Database Lookup Failed (init queries issue). Retrying in 5s...", err.message);
+    setTimeout(startBot, 5000);
+    return;
+  }
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
