@@ -124,6 +124,19 @@ async function downloadMediaAsBase64(msg, mediaInfo) {
   }
 }
 
+/**
+ * Download an image from URL and return as Buffer
+ */
+async function downloadImage(url) {
+  try {
+    const response = await axios.get(url, { responseType: 'arraybuffer' });
+    return Buffer.from(response.data, 'binary');
+  } catch (err) {
+    console.error(`❌ Download failed for ${url}:`, err.message);
+    return null;
+  }
+}
+
 async function processQueuedMessages(jid, pushName) {
     const queue = messageQueues[jid];
     if (!queue || queue.messages.length === 0) return;
@@ -151,17 +164,32 @@ async function processQueuedMessages(jid, pushName) {
       try {
         console.log(`📡 Sending to: ${url}/api/simulator`);
         const response = await axios.post(`${url}/api/simulator`, payload, { headers, timeout: 60000 });
-        const { reply, products, replyButtons, interactiveType } = response.data;
+        const { reply, products, replyButtons, interactiveType, welcomeReply } = response.data;
+
+        if (welcomeReply) {
+          console.log(`👋 Sending Welcome: ${welcomeReply.substring(0, 30)}...`);
+          await sock.sendMessage(jid, { text: welcomeReply });
+          // Short delay for better UX
+          await new Promise(res => setTimeout(res, 1500));
+        }
 
         if (reply) {
           console.log(`🤖 AI Reply: ${reply.substring(0, 50)}...`);
           
-          if (interactiveType === 'image' && products && products.length > 0 && products[0].image_url) {
-            console.log('🖼️  Sending Image Message via Baileys...');
-            await sock.sendMessage(jid, {
-              image: { url: products[0].image_url },
-              caption: reply
-            });
+          if (interactiveType === 'image' && products && products.length > 0 && (products[0].image_url || products[0].imageUrl)) {
+            const imgUrl = products[0].image_url || products[0].imageUrl;
+            console.log('🖼️  Downloading & Sending Image via Baileys...');
+            const imgBuffer = await downloadImage(imgUrl);
+            
+            if (imgBuffer) {
+              await sock.sendMessage(jid, {
+                image: imgBuffer,
+                caption: reply
+              });
+            } else {
+              // Fallback to text if image fails
+              await sock.sendMessage(jid, { text: reply });
+            }
             // Send buttons as a quick follow-up if applicable
             if (replyButtons && replyButtons.length > 0) {
               try {
@@ -174,7 +202,7 @@ async function processQueuedMessages(jid, pushName) {
             const rows = products.slice(0, 10).map(p => ({
               title: p.name.substring(0, 24),
               rowId: `prod_${p.id}`,
-              description: `Rs. ${p.price} | ${p.category || 'Hardware'}`.substring(0, 72)
+              description: `Rs. ${p.price} | ${p.category || 'Bathware'}`.substring(0, 72)
             }));
 
             await sock.sendMessage(jid, {
